@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lunar Landing Site Viability Predictor</title>
+<script src="https://unpkg.com/ml5@1/dist/ml5.js"></script>
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;color:#1a1a1a;background:#fafafa;line-height:1.4}
+  h1{font-size:1.4rem;margin-bottom:4px}
+  h2{font-size:1.1rem;margin-top:32px}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:0.85rem}
+  th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
+  th{background:#eee}
+  button{padding:10px 18px;margin:8px 8px 8px 0;border:none;border-radius:6px;background:#2b2b52;color:#fff;font-size:0.95rem;cursor:pointer}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  label{display:block;margin-top:10px;font-size:0.9rem;font-weight:600}
+  input{width:100%;padding:7px;margin-top:3px;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;font-size:0.95rem}
+  #status{font-family:ui-monospace,monospace;white-space:pre-wrap;background:#111;color:#6f6;padding:10px;border-radius:6px;max-height:160px;overflow:auto;font-size:0.78rem;margin-top:10px}
+  #result{font-size:1.3rem;margin-top:10px}
+  .note{font-size:0.85rem;color:#4a3b00;background:#fff3cd;padding:10px 12px;border-radius:6px;border:1px solid #ffe69c}
+  #trainState{font-size:0.9rem;color:#555}
+</style>
+</head>
+<body>
+
+<h1>🌕 Lunar South Pole Landing Site Viability Predictor</h1>
+<p>A small regression neural network (via <strong>ml5.js</strong>) that learns to score candidate landing sites from slope, solar illumination, and Earth-comms visibility — the same three factors NASA actually weighs for Artemis III site selection.</p>
+
+<p class="note">
+<strong>About the dataset below:</strong> the 7 rows are <em>illustrative</em> values based on publicly
+known, published factors (approximate slope / solar illumination % / Earth-visibility %) for real
+Artemis III candidate regions — not exact official per-site figures. Swap these for the official
+challenge dataset once it's released (Oct 28) before your final submission. The training + prediction
+pipeline works identically no matter what numbers you plug in — that's the part to get solid now.
+</p>
+
+<table id="dataTable">
+  <thead><tr><th>Site</th><th>Slope (°)</th><th>Illumination %</th><th>Comms %</th><th>Viability (label)</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<button id="trainBtn">Train Model</button>
+<span id="trainState"></span>
+<div id="status"></div>
+
+<h2>Predict a new / hypothetical site</h2>
+<label>Slope (degrees, lower = flatter = better)
+  <input type="number" id="inSlope" value="6" step="0.1">
+</label>
+<label>Solar illumination (%, higher = better)
+  <input type="number" id="inIllum" value="75" step="1">
+</label>
+<label>Earth comms visibility (%, higher = better)
+  <input type="number" id="inComms" value="60" step="1">
+</label>
+<button id="predictBtn" disabled>Predict Viability</button>
+<h3 id="result"></h3>
+
+<script>
+// ---------------------------------------------------------------
+// STARTER DATASET — see the note above. These are a reasonable,
+// realistic-shaped starting point, not official mission data.
+// ---------------------------------------------------------------
+const sites = [
+  { name: "Connecting Ridge",   slope: 4,  illumination: 82, comms: 65, viability: 9.0 },
+  { name: "Malapert Massif",    slope: 7,  illumination: 75, comms: 85, viability: 8.5 },
+  { name: "de Gerlache Rim 1",  slope: 5,  illumination: 80, comms: 55, viability: 8.0 },
+  { name: "Mons Mouton",        slope: 6,  illumination: 75, comms: 60, viability: 7.5 },
+  { name: "Nobile Rim 1",       slope: 8,  illumination: 70, comms: 50, viability: 6.5 },
+  { name: "Shackleton Rim",     slope: 12, illumination: 72, comms: 55, viability: 5.5 },
+  { name: "Haworth",            slope: 11, illumination: 60, comms: 45, viability: 4.5 },
+];
+
+// render the table
+const tbody = document.querySelector("#dataTable tbody");
+sites.forEach(s => {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${s.name}</td><td>${s.slope}</td><td>${s.illumination}</td><td>${s.comms}</td><td>${s.viability}</td>`;
+  tbody.appendChild(tr);
+});
+
+function log(msg) {
+  const el = document.getElementById("status");
+  el.textContent += msg + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+// ---------------------------------------------------------------
+// ml5.js neural network — regression task
+// ---------------------------------------------------------------
+const nn = ml5.neuralNetwork({ task: "regression", debug: false });
+
+sites.forEach(s => {
+  nn.addData(
+    { slope: s.slope, illumination: s.illumination, comms: s.comms },
+    { viability: s.viability }
+  );
+});
+nn.normalizeData();
+
+document.getElementById("trainBtn").addEventListener("click", () => {
+  document.getElementById("trainBtn").disabled = true;
+  document.getElementById("trainState").textContent = " training…";
+  log(`Starting training on ${sites.length} sites...`);
+
+  nn.train({ epochs: 120 }, whileTraining, finishedTraining);
+});
+
+function whileTraining(epoch, loss) {
+  if (epoch % 20 === 0) {
+    const lossVal = loss && typeof loss.loss === "number" ? loss.loss.toFixed(4) : loss;
+    log(`epoch ${epoch} — loss: ${lossVal}`);
+  }
+}
+
+function finishedTraining() {
+  document.getElementById("trainState").textContent = " ✅ trained";
+  document.getElementById("predictBtn").disabled = false;
+  log("Training complete — try predicting a site below.");
+}
+
+document.getElementById("predictBtn").addEventListener("click", () => {
+  const input = {
+    slope: parseFloat(document.getElementById("inSlope").value),
+    illumination: parseFloat(document.getElementById("inIllum").value),
+    comms: parseFloat(document.getElementById("inComms").value),
+  };
+  nn.predict(input, (err, results) => {
+    if (err) {
+      log("Prediction error: " + err);
+      return;
+    }
+    const score = results[0].value;
+    document.getElementById("result").textContent =
+      `Predicted viability: ${score.toFixed(1)} / 10`;
+  });
+});
+</script>
+</body>
+</html>
